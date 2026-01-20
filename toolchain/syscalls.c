@@ -2,53 +2,55 @@
 #include <sys/types.h>
 
 hidden noplt void * __dl_mmap(void *addr, size_t len, int prot, int flags, int fd, off_t off) {
-    void *ret = 0;
-    asm volatile (
-        "movq %1, %%rdi;"
-        "movq %2, %%rsi;"
-        "movl %3, %%edx;"
-        "movl %4, %%r10d;"
-        "movl %5, %%r8d;"
-        "movq %6, %%r9;"
-        "movq $9, %%rax;" // SYS_mmap
-        "syscall;"
-        "movq %%rax, %0"
-        : "=r" (ret)
-        : "r" (addr), "r" (len), "r" (prot), "r" (flags), "r" (fd), "r" (off)
-        : "rcx", "r11", "rax"
+    long ret;
+    register long r10 __asm__("r10") = flags;
+    register long r8  __asm__("r8")  = fd;
+    register long r9  __asm__("r9")  = off;
+
+    __asm__ volatile (
+        "syscall"
+        : "=a"(ret)
+        : "a"(9), "D"(addr), "S"(len), "d"(prot), "r"(r10), "r"(r8), "r"(r9)
+        : "rcx", "r11", "memory"
     );
-    return ret;
+
+    if (ret < 0) return (void*)-1;   
+    return (void*)ret;
 }
 
-hidden noplt int __dl_munmap(void *addr, size_t len) {
-    int ret = 0;
-    asm volatile (
-        "movq %1, %%rdi;"
-        "movq %2, %%rsi;"
-        "movq $11, %%rax;" // SYS_munmap
-        "syscall;"
-        "movl %%eax, %0"
-        : "=r" (ret)
-        : "r" (addr), "r" (len)
-        : "rcx", "r11", "rax"
+
+// SYS_munmap: 11
+hidden noplt int __dl_munmap(void *addr, size_t len)
+{
+    long ret;
+
+    __asm__ volatile (
+        "syscall"
+        : "=a"(ret)
+        : "a"(11),       // SYS_munmap
+          "D"(addr),     // rdi
+          "S"(len)       // rsi
+        : "rcx", "r11", "memory"
     );
-    return ret;
+    return (int)ret;
 }
 
-hidden noplt int __dl_mprotect(void *addr, size_t len, int prot) {
-    int ret = 0;
-    asm volatile (
-        "movq %1, %%rdi;"
-        "movq %2, %%rsi;"
-        "movl %3, %%edx;"
-        "movq $10, %%rax;" // SYS_mprotect
-        "syscall;"
-        "movl %%eax, %0"
-        : "=r" (ret)
-        : "r" (addr), "r" (len), "r" (prot)
-        : "rcx", "r11", "rax"
+// SYS_mprotect: 10
+hidden noplt int __dl_mprotect(void *addr, size_t len, int prot)
+{
+    long ret;
+
+    __asm__ volatile (
+        "syscall"
+        : "=a"(ret)
+        : "a"(10),       // SYS_mprotect
+          "D"(addr),     // rdi
+          "S"(len),      // rsi
+          "d"(prot)      // rdx
+        : "rcx", "r11", "memory"
     );
-    return ret;
+
+    return (int)ret;
 }
 
 hidden noplt int64_t __dl_read(uint32_t fd, char *buf, size_t count) {

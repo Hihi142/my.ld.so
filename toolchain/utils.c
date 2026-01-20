@@ -67,8 +67,7 @@ hidden noplt void __dl_print_hex(uint64_t n) {
     __dl_puts(s);
 }
 
-__attribute__((always_inline))
-inline void __dl_exit(uint32_t code) {
+hidden noreturn void __dl_exit(uint32_t code) {
     asm volatile (
         "xorq %%rdi, %%rdi;"
         "movl %0, %%edi;"
@@ -78,6 +77,7 @@ inline void __dl_exit(uint32_t code) {
         : "r" (code)
         : "rdi", "rax"
     );
+    __builtin_unreachable();
 }
 
 hidden noreturn noplt void __dl_die_impl(char *msg, char* filename, int lineno) {
@@ -89,7 +89,7 @@ hidden noreturn noplt void __dl_die_impl(char *msg, char* filename, int lineno) 
     __dl_exit(127);
 }
 
-hidden noreturn noplt void __dl_warn_impl(char *msg, char* filename, int lineno) {
+hidden noplt void __dl_warn_impl(char *msg, char* filename, int lineno) {
     __dl_stdout_fputs("[WARN] ");
     __dl_stdout_fputs(filename);
     __dl_stdout_fputs(":");

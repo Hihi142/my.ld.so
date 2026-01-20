@@ -4,7 +4,7 @@
 #include <elf.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
-#include <sys/fcntl.h>
+#include <fcntl.h>
 #include "auxv.h"
 #include "utils.h"
 #include "syscalls.h"

@@ -6,7 +6,7 @@
 #include "tls.h"
 #include <stddef.h>
 #include <elf.h>
-#include <linux/limits.h>
+#include <limits.h>
 
 static uint64_t dynv[DT_NUM];
 static DlElfInfo *exec = 0;
@@ -26,16 +26,17 @@ noreturn void _start() {
         :
         : "rdi", "rax"
     );
-    run_init(); // musl libc does this for us
+    // run_init(); // musl libc does this for us
     __dl_puts("Let's take over the world!");
     asm volatile ("mov $0, %%rbp;"
-        "add $0x8, %%rsp;"
+        // "add $0x8, %%rsp;"
         "jmp *%0;"
         :: "m"(exec->entry));
-    /*
+    /* 
     I've fixed the stack layout and symbol search of ld.so global data.
     However, __init_ssp depends on pthread_self. We will have to work around this.
     */
+   __builtin_unreachable();
 }
 
 hidden noplt void _start_c(void* sp) {
@@ -43,7 +44,7 @@ hidden noplt void _start_c(void* sp) {
     size_t argc = *(size_t*)sp;
     char** argv = (void*)((char*)sp + 8);
     __dl_print_int(argc);
-    __dl_stdout_fputs("Arguments: ");
+    __dl_stdout_fputs("Arguments: \n");
     for (int i = 0; i < argc; i++) {
         __dl_stdout_fputs(argv[i]);
         __dl_stdout_fputs(" ");
@@ -70,9 +71,10 @@ hidden noplt void _start_c(void* sp) {
             conf.preload = s + preload_prefix_len;
         }
     }
+#ifdef DEBUG
     if (conf.lib_path) { __dl_stdout_fputs("lib_path = "); __dl_puts(conf.lib_path); }
     if (conf.preload) { __dl_stdout_fputs("preload = "); __dl_puts(conf.preload); }
-
+#endif
     __dl_puts("Aux:");
     auxv_t* auxv = (void*)(envp + 1);
     int64_t at_phnum = 0;
@@ -98,6 +100,7 @@ hidden noplt void _start_c(void* sp) {
                 break;
         }
     }
+#ifdef DEBUG
     __dl_stdout_fputs(" AT_EXECFN:");
     __dl_puts(at_execfn);
 
@@ -110,7 +113,7 @@ hidden noplt void _start_c(void* sp) {
     __dl_stdout_fputs(" AT_BASE:");
     __dl_print_hex((uint64_t) at_ldso_base);
     __dl_puts("END");
-
+#endif
     bool direct_invoke = false;
 
     if (!at_ldso_base) {
@@ -193,20 +196,22 @@ hidden noplt void _start_c(void* sp) {
     uint32_t symbol_num = __dl_gnu_hash_get_num_syms(gnu_hashtab);
     // show symbols defined
     Elf64_Sym *sym = exec->sym_table, *sym_table = exec->sym_table;
-    // for (uint32_t i = symbol_num; i; i--, sym++) {
-    //     __dl_stdout_fputs("==> Symbol name: ");
-    //     if (sym->st_name) {
-    //         __dl_puts(str_table + sym->st_name);
-    //     } else {
-    //         __dl_puts("[NO NAME]");
-    //     }
-    //     __dl_stdout_fputs("    Symbol value: ");
-    //     __dl_print_hex(sym->st_value);
-    //     __dl_stdout_fputs("    Symbol size: ");
-    //     __dl_print_int(sym->st_size);
-    // }
+#ifdef DEBUG
+    for (uint32_t i = symbol_num; i; i--, sym++) {
+        __dl_stdout_fputs("==> Symbol name: ");
+        if (sym->st_name) {
+            __dl_puts(str_table + sym->st_name);
+        } else {
+            __dl_puts("[NO NAME]");
+        }
+        __dl_stdout_fputs("    Symbol value: ");
+        __dl_print_hex(sym->st_value);
+        __dl_stdout_fputs("    Symbol size: ");
+        __dl_print_int(sym->st_size);
+    }
+#endif
     // TODO: parse the GNU_HASH hashtable for symbols
-
+#ifdef DEBUG
     // multiple DT_NEEDED entries may exist
     for (SLNode *node = exec->dep_names; node != 0; node = node->next) {
         __dl_stdout_fputs("==> Dependency: ");
@@ -215,7 +220,7 @@ hidden noplt void _start_c(void* sp) {
 
     __dl_stdout_fputs("==> DT_RUNPATH: ");
     __dl_puts(exec->runpath);
-
+#endif
     void *rel_table = (void*) (exec->base + dynv[DT_REL]);
     uint64_t rel_cnt = dynv[DT_RELSZ] / sizeof(Elf64_Rel);
     void *rela_table = (void*) (exec->base + dynv[DT_RELA]);
@@ -225,6 +230,7 @@ hidden noplt void _start_c(void* sp) {
     void * plt_reloc_table = (void*) (exec->base + dynv[DT_JMPREL]);
 
     DlInfoHTNode ** dlinfo_ht = __dl_malloc(sizeof(DlInfoHTNode*) * DLINFO_HT_LEN);
+    __dl_memset(dlinfo_ht, 0, sizeof(DlInfoHTNode*) * DLINFO_HT_LEN);
     DlRecResult res = __dl_recursive_load_all(exec, &conf, dlinfo_ht);
     __dl_puts("Recursive loading done.");
 
@@ -255,19 +261,19 @@ hidden noplt void _start_c(void* sp) {
     if (libc_dso != 0) {
         const Elf64_Sym* sym = 0;
         size_t cnt = __dl_gnu_hash_get_num_syms(libc_dso->gnu_hash_table);
-        __dl_print_int(cnt);
+        // __dl_print_int(cnt);
         for (Elf64_Sym* s = libc_dso->sym_table; cnt != 0; s++, cnt--) {
-            __dl_puts(libc_dso->str_table + s->st_name);
+            // __dl_puts(libc_dso->str_table + s->st_name);
             if (__dl_strcmp("__libc", libc_dso->str_table + s->st_name) == 0) {
                 sym = s; break;
             }
         }
-        if (sym == 0) __dl_die("__libc not found in musl");
-        __dl_stdout_fputs("musl libc found. __libc vaddr = ");
-        libc = (void*)(libc_dso->base + sym->st_value);
-        __dl_print_hex((uint64_t) libc);
+        // if (sym == 0) __dl_die("__libc not found in musl");
+        // __dl_stdout_fputs("musl libc found. __libc vaddr = ");
+        // libc = (void*)(libc_dso->base + sym->st_value);
+        // __dl_print_hex((uint64_t) libc);
 
-        libc->auxv = (void*) auxv;
+        // libc->auxv = (void*) auxv;
         // libc->tls_size = sizeof builtin_tls;
         // libc->tls_align = 8; // For x86_64 only
         // TODO: do we need builtin_tls at all? musl ld.so uses libc,

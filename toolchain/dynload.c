@@ -1,8 +1,8 @@
 #include "dynload.h"
 #include "utils.h"
 #include <elf.h>
-#include <sys/fcntl.h>
-#include <linux/limits.h>
+#include <fcntl.h>
+#include <limits.h>
 
 // Check if ELF header is valid.
 hidden noplt bool __dl_checkelf(Elf64_Ehdr *ehdr) {
@@ -115,7 +115,7 @@ hidden noplt DlElfInfo * __dl_loadelf(const char* path) {
     for (int64_t i = 0; i < ret->phnum; i++) {
         Elf64_Phdr *e = phdr + i;
         if (e->p_memsz == 0) continue;
-        if (e->p_type != PT_LOAD || e->p_align != 0x1000) continue; // Only handle PT_LOAD that is 4k-aligned
+        if (e->p_type != PT_LOAD) continue; // Only handle PT_LOAD that is 4k-aligned
 
         int prot = 0;
         if (e->p_flags & PF_R) prot |= PROT_READ;
@@ -128,29 +128,19 @@ hidden noplt DlElfInfo * __dl_loadelf(const char* path) {
         // __dl_stdout_fputs("Mapping offset (aligned) "); __dl_print_hex(offset_aligned);
         void *r = __dl_mmap(
             (void*)(ret->base + e->p_vaddr - align_diff),
-            e->p_filesz + align_diff,
+            e->p_memsz + align_diff,
             prot,
             MAP_PRIVATE | MAP_FIXED,
             fd,
             offset_aligned
         );
         if (!r) __dl_die("segment mmap failed");
-        int err = __dl_mprotect(r, e->p_memsz + align_diff, prot);
-        if (err) __dl_die("mprotect failed");
+        // int err = __dl_mprotect(r, e->p_memsz + align_diff, prot);
+        // if (err) __dl_die("mprotect failed");
 
     }
 
-    for (int64_t i = 0; i < ret->phnum; i++) {
-        Elf64_Phdr *e = phdr + i;
-        if (e->p_type == PT_PHDR) {
-            ret->ph = (void*)(ret->base + e->p_vaddr);
-            break;
-        }
-    }
-    if (ret->ph == 0) {
-        // no PT_PHDR; we will have to guess PHDR address
-        ret->ph = (void*)(ret->base + phoff);
-    }
+    ret->ph = (void*)(ret->base + phoff);
     int err = __dl_munmap(phdr_aligned, (ret->phnum) * sizeof(Elf64_Phdr)); // unmap old phdr
     if (err) __dl_die("unmap old phdr failed");
 

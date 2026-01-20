@@ -1,7 +1,7 @@
 #include "walkdyn.h"
 #include "utils.h"
 #include "global.h"
-#include <linux/limits.h>
+#include <limits.h>
 
 hidden noplt void __dl_ht_insert(DlInfoHTNode *tbl[], uint64_t len, DlElfInfo *elf) {
     uint64_t h = DL_H(elf->dev, elf->ino) % len;
@@ -31,7 +31,7 @@ hidden noplt DlRecResult __dl_recursive_load_all(DlElfInfo *exec, EnvLdConfig *c
     SLNode *lib_path = 0;
     SLNode **lib_path_tail = &lib_path;
 
-    __dl_memset(dlinfo_ht, 0, sizeof(dlinfo_ht));
+    // __dl_memset(dlinfo_ht, 0, sizeof(dlinfo_ht));
 
     // First, handle LD_LIBRARY_PATH
     if (conf->lib_path) {
@@ -48,6 +48,7 @@ hidden noplt DlRecResult __dl_recursive_load_all(DlElfInfo *exec, EnvLdConfig *c
     SL_APPEND("/lib", lib_path_tail);
     SL_APPEND("/usr/lib", lib_path_tail);
     SL_APPEND("/usr/local/lib", lib_path_tail);
+    SL_APPEND("/usr/lib/x86_64-linux-musl", lib_path_tail);
 
     // Load everything in LD_PRELOAD before exec
     if (conf->preload) {
@@ -94,7 +95,9 @@ hidden noplt void __dl_load_dfs(DlElfInfo *u, SLNode *lib_path, DlInfoHTNode *dl
         bool already_loaded = false, can_load = false;
         for (SLNode *nextload = loadlist; nextload; nextload = nextload->next) {
             // __dl_stdout_fputs("==> try dep path ");
-            // __dl_puts(nextload->s);
+#ifdef DEBUG
+            __dl_puts(nextload->s);
+#endif
             // first, search in vis[]
             struct stat statbuf;
             if (__dl_stat(nextload->s, &statbuf) != 0) {
@@ -272,8 +275,8 @@ hidden noplt void __dl_relocate(DlElfInfo *elf, DlInfoHTNode **dlinfo_ht, DlFile
                     } else if (__dl_strcmp("__stack_chk_guard", local_sym_str) == 0) {
                         *offset = (uint64_t) &__stack_chk_guard;
                     } else {
-                        __dl_stdout_fputs(local_sym_str);
-                        __dl_puts(" => no glob data found");
+                        // __dl_stdout_fputs(local_sym_str);
+                        // __dl_puts(" => no glob data found");
                         continue;
                     }
                 }
