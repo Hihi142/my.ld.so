@@ -12,7 +12,8 @@ static uint64_t dynv[DT_NUM];
 static DlElfInfo *exec = 0;
 static DlElfInfo *libc_dso = 0;
 static int ret_code = 0;
-static struct __libc *libc = 0;
+static size_t TCBdummy[50];
+volatile int __thread_list_lock;
 
 // The _start function should be the first function in main.c. It is the entry point of dynamic linker.
 // Do not move it around, as its address is used for detecting self-relocation.
@@ -29,7 +30,7 @@ noreturn void _start() {
     // run_init(); // musl libc does this for us
     __dl_puts("Let's take over the world!");
     asm volatile ("mov $0, %%rbp;"
-        // "add $0x8, %%rsp;"
+        "add $0x8, %%rsp;"
         "jmp *%0;"
         :: "m"(exec->entry));
     /* 
@@ -81,6 +82,7 @@ hidden noplt void _start_c(void* sp) {
     uint64_t at_entry = 0;
     char *at_execfn = 0;
     void *at_phdr = 0, *at_ldso_base = 0;
+    // my_libc.auxv = (size_t*) auxv;
     for (; auxv->a_type != AT_NULL; auxv++) {
         switch (auxv->a_type) {
             case AT_EXECFN:
@@ -98,6 +100,9 @@ hidden noplt void _start_c(void* sp) {
             case AT_ENTRY:
                 at_entry = auxv->a_un.a_val;
                 break;
+            // case AT_PAGESZ:
+            //     __dl_stdout_fputs("Page SZ = ");
+            //     __dl_print_hex(auxv->a_un.a_val);
         }
     }
 #ifdef DEBUG
@@ -284,6 +289,9 @@ hidden noplt void _start_c(void* sp) {
         // b) chain them to form the initial TLS image
     }
 
+    TCBdummy[0] = (size_t)TCBdummy;
+    __dl_set_thread_area(TCBdummy);
+    __dl_set_tid_address( (int*) &__thread_list_lock);
 }
 
 hidden noplt void run_init() {

@@ -18,6 +18,10 @@ hidden noplt bool __dl_checkelf(Elf64_Ehdr *ehdr) {
         ;
 }
 
+#define PAGE 4096UL
+#define PAGE_DOWN(x) ((x) & ~(PAGE-1))
+#define PAGE_UP(x)   (((x) + PAGE - 1) & ~(PAGE-1))
+
 // Uses mmap to map segments of ELF into memory.
 // Returns true when load succeeded, and false when load failed.
 // TODO: support ASLR
@@ -107,7 +111,8 @@ hidden noplt DlElfInfo * __dl_loadelf(const char* path) {
     }
     if (m == (void*)-1) __dl_die("anonymous mmap reservation failed");
     ret->base = (uint64_t)m - lowaddr_aligned;
-    __dl_stdout_fputs("Reserved memory at "); __dl_print_hex(ret->base);
+    // __dl_stdout_fputs(path);
+    // __dl_stdout_fputs(": Memory Base at "); __dl_print_hex(ret->base);
     if (ret->base & 0xfff) __dl_die("ret->base not 4k-aligned");
     ret->entry = (void*)(ret->base + ehdr->e_entry);
 
@@ -117,27 +122,50 @@ hidden noplt DlElfInfo * __dl_loadelf(const char* path) {
         if (e->p_memsz == 0) continue;
         if (e->p_type != PT_LOAD) continue; // Only handle PT_LOAD that is 4k-aligned
 
-        int prot = 0;
+        if ( (e->p_offset & (PAGE-1)) != (e->p_vaddr & (PAGE-1)) ) {
+            __dl_die("PT_LOAD misaligned: p_offset %% PAGE != p_vaddr %% PAGE");
+        }
+                int prot = 0;
         if (e->p_flags & PF_R) prot |= PROT_READ;
         if (e->p_flags & PF_W) prot |= PROT_WRITE;
         if (e->p_flags & PF_X) prot |= PROT_EXEC;
 
-        off_t offset_aligned = e->p_offset & ~0xfff;
-        off_t align_diff = (e->p_offset - offset_aligned);
+        off_t  off0   = PAGE_DOWN(e->p_offset);
+        size_t off_in = (size_t)(e->p_offset - off0);
+        void  *seg0   = (void*)(ret->base + PAGE_DOWN(e->p_vaddr));
+        void  *map0   = (void*)((uintptr_t)seg0);
 
-        // __dl_stdout_fputs("Mapping offset (aligned) "); __dl_print_hex(offset_aligned);
-        void *r = __dl_mmap(
-            (void*)(ret->base + e->p_vaddr - align_diff),
-            e->p_memsz + align_diff,
-            prot,
-            MAP_PRIVATE | MAP_FIXED,
-            fd,
-            offset_aligned
-        );
-        if (!r) __dl_die("segment mmap failed");
-        // int err = __dl_mprotect(r, e->p_memsz + align_diff, prot);
-        // if (err) __dl_die("mprotect failed");
+        // (1) mapping the file content: p_filesz btyes
+        size_t file_len = 0;
+        if (e->p_filesz > 0) {
+            file_len = PAGE_UP(off_in + (size_t)e->p_filesz);
+            void *r = __dl_mmap(map0, file_len, prot,
+                                MAP_PRIVATE | MAP_FIXED, fd, off0);
+            if (!r) __dl_die("file segment mmap failed");
+        }
 
+        // (2) mapping .bss section: (p_memsz - p_filesz) bytes
+        if (e->p_memsz > e->p_filesz) {
+            uintptr_t bss_start = (uintptr_t)map0 + (off_in + (size_t)e->p_filesz);
+            uintptr_t bss_page  = PAGE_UP(bss_start);
+            uintptr_t end_mem   = (uintptr_t)map0 + PAGE_UP(off_in + (size_t)e->p_memsz);
+
+            // (2a) the beginning of .bss section might not be page-aligned.
+            //      zero that part of the page
+            if (bss_start < bss_page) {
+                size_t to_zero = (size_t)(bss_page - bss_start);
+                __dl_memset((void*)bss_start, 0, to_zero);
+            }
+
+            // (2b) zero the rest ot the .bss pages
+            if (bss_page < end_mem) {
+                size_t anon_len = (size_t)(end_mem - bss_page);
+                void *r2 = __dl_mmap((void*)bss_page, anon_len, prot,
+                                    MAP_PRIVATE | MAP_FIXED | MAP_ANONYMOUS,
+                                    -1, 0);
+                if (!r2) __dl_die("bss anon mmap failed");
+            }
+        }
     }
 
     ret->ph = (void*)(ret->base + phoff);
@@ -158,8 +186,9 @@ hidden noplt bool __dl_loadelf_extras(DlElfInfo *ret) {
         Elf64_Phdr *e = ret->ph + i;
         if (e->p_type == PT_DYNAMIC) {
             ret->dyn = (void*)(ret->base + e->p_vaddr);
-            break;
         } else if (e->p_type == PT_TLS) {
+            // __dl_stdout_fputs("\n\n\n\n\nFound TLS segment: "); 
+            // __dl_stdout_puts(ret->load_path ? ret->load_path : "SELF");
             ret->tls.align = e->p_align;
             ret->tls.len = e->p_filesz;
             ret->tls.size = e->p_memsz;

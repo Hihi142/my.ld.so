@@ -12,3 +12,9 @@ hidden noplt int __dl_close(int fd);
 hidden noplt int __dl_stat(const char* path, struct stat* buf);
 hidden noplt int __dl_fstat(int fd, struct stat* buf);
 hidden noplt int64_t __dl_readlink(const char *pathname, char *buf, size_t bufsize);
+hidden noplt long __dl_get_tid_address(void);
+hidden noplt long __dl_set_tid_address(int *tidptr);
+hidden noplt long __dl_set_thread_area(void *tp);
+/* Get current "thread pointer" (FS.base).
+ * Return FS.base on success; (void*)-1 on error. */
+hidden noplt void * __dl_get_thread_area(void);
